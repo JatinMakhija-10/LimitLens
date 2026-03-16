@@ -1,0 +1,927 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>LimitLens — AI Token Reset Tracker</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+/* =========== RESET & BASE =========== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body, #root { height: 100%; width: 100%; }
+body {
+  font-family: 'Space Mono', monospace;
+  background: #080a0f;
+  color: #e0e0e0;
+  overflow-x: hidden;
+}
+
+/* =========== STAR CANVAS =========== */
+#stars-canvas {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+}
+
+/* =========== AMBIENT GLOWS =========== */
+.ambient-glow {
+  position: fixed; border-radius: 50%; filter: blur(120px);
+  pointer-events: none; z-index: 0; opacity: .12;
+}
+.glow-amber { width: 500px; height: 500px; background: #d4940a; top: -100px; left: -100px; }
+.glow-blue  { width: 600px; height: 600px; background: #2e7cff; bottom: -150px; right: -150px; }
+
+/* =========== LAYOUT =========== */
+.app-wrapper {
+  position: relative; z-index: 1; min-height: 100vh;
+  display: flex; flex-direction: column; align-items: center;
+  padding: 32px 16px 100px;
+}
+.app-header {
+  text-align: center; margin-bottom: 28px;
+}
+.app-header h1 {
+  font-size: 2.2rem; font-weight: 700; letter-spacing: 4px;
+  background: linear-gradient(135deg, #d4940a 30%, #2e7cff 70%);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.app-header p {
+  font-size: .75rem; color: #666; margin-top: 4px; letter-spacing: 2px; text-transform: uppercase;
+}
+
+/* =========== FILTER BAR =========== */
+.filter-bar {
+  display: flex; gap: 6px; margin-bottom: 28px;
+  background: rgba(255,255,255,.04); border-radius: 10px; padding: 4px;
+  border: 1px solid rgba(255,255,255,.06);
+}
+.filter-btn {
+  font-family: 'Space Mono', monospace;
+  padding: 8px 20px; border: none; border-radius: 8px;
+  background: transparent; color: #888; cursor: pointer;
+  font-size: .8rem; letter-spacing: 1px; transition: all .25s;
+}
+.filter-btn:hover { color: #ccc; }
+.filter-btn.active-all     { background: rgba(255,255,255,.1); color: #fff; }
+.filter-btn.active-renewed { background: rgba(0,220,100,.15); color: #00dc64; }
+
+/* =========== CARD GRID =========== */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 20px; width: 100%; max-width: 1100px;
+}
+
+/* =========== CARD =========== */
+.card {
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 18px; padding: 24px;
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  transition: transform .3s, box-shadow .3s, border-color .3s;
+  position: relative; overflow: hidden;
+}
+.card:hover {
+  transform: translateY(-4px);
+}
+.card.claude-card { border-color: rgba(212,148,10,.25); }
+.card.claude-card:hover  { box-shadow: 0 8px 40px rgba(212,148,10,.12); }
+.card.gemini-card { border-color: rgba(46,124,255,.25); }
+.card.gemini-card:hover  { box-shadow: 0 8px 40px rgba(46,124,255,.12); }
+.card.both-card { border-color: rgba(160,130,200,.25); }
+.card.both-card:hover { box-shadow: 0 8px 40px rgba(160,130,200,.12); }
+
+.card-top {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 18px;
+}
+.card-name {
+  font-size: 1.05rem; font-weight: 700; letter-spacing: 1px;
+}
+.card-badges { display: flex; gap: 6px; }
+.card-model-badge {
+  font-size: .65rem; letter-spacing: 2px; text-transform: uppercase;
+  padding: 3px 10px; border-radius: 6px;
+}
+.badge-claude { background: rgba(212,148,10,.15); color: #d4940a; }
+.badge-gemini { background: rgba(46,124,255,.15); color: #2e7cff; }
+
+/* ring + countdown center */
+.card-ring-area {
+  display: flex; flex-direction: column; align-items: center; margin-bottom: 18px;
+}
+.dual-ring-area {
+  display: flex; gap: 16px; justify-content: center; align-items: flex-start;
+  margin-bottom: 18px; flex-wrap: wrap;
+}
+.dual-ring-col {
+  display: flex; flex-direction: column; align-items: center; flex: 1; min-width: 140px;
+}
+.dual-ring-col .model-ring-label {
+  font-size: .6rem; letter-spacing: 2px; text-transform: uppercase;
+  margin-bottom: 4px; font-weight: 700;
+}
+.dual-ring-col .model-ring-label.claude-label { color: #d4940a; }
+.dual-ring-col .model-ring-label.gemini-label { color: #2e7cff; }
+.ring-svg { width: 140px; height: 140px; }
+.ring-svg.small { width: 120px; height: 120px; }
+.ring-track { fill: none; stroke: rgba(255,255,255,.06); stroke-width: 6; }
+.ring-progress { fill: none; stroke-width: 6; stroke-linecap: round;
+  transition: stroke-dashoffset .4s ease, stroke .3s; }
+.ring-center-text {
+  font-size: 1.25rem; font-weight: 700; letter-spacing: 2px;
+}
+.ring-center-text.small-text { font-size: 1rem; }
+.ring-center-sub {
+  font-size: .6rem; fill: #666; letter-spacing: 1px;
+}
+.dual-bar-row {
+  display: flex; gap: 8px; margin-bottom: 16px; align-items: center;
+}
+.dual-bar-label {
+  font-size: .55rem; letter-spacing: 1px; text-transform: uppercase; width: 50px; text-align: right; flex-shrink: 0;
+}
+.dual-bar-label.claude-label { color: #d4940a; }
+.dual-bar-label.gemini-label { color: #2e7cff; }
+
+/* horizontal bar */
+.h-bar-track {
+  width: 100%; height: 4px; border-radius: 2px;
+  background: rgba(255,255,255,.06); margin-bottom: 16px; overflow: hidden;
+}
+.dual-bar-row .h-bar-track { margin-bottom: 0; flex: 1; }
+.h-bar-fill {
+  height: 100%; border-radius: 2px; transition: width .4s ease;
+}
+
+/* per-model restart */
+.dual-actions {
+  display: flex; gap: 8px; justify-content: center; align-items: center; flex-wrap: wrap;
+}
+.btn-restart-model {
+  font-family: 'Space Mono', monospace;
+  padding: 5px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,.1);
+  background: transparent; cursor: pointer; font-size: .65rem;
+  letter-spacing: 1px; transition: all .2s; display: flex; align-items: center; gap: 4px;
+}
+.btn-restart-model:hover { background: rgba(255,255,255,.07); }
+.btn-restart-model.claude-btn { color: #d4940a; border-color: rgba(212,148,10,.2); }
+.btn-restart-model.claude-btn:hover { background: rgba(212,148,10,.08); }
+.btn-restart-model.gemini-btn { color: #2e7cff; border-color: rgba(46,124,255,.2); }
+.btn-restart-model.gemini-btn:hover { background: rgba(46,124,255,.08); }
+
+/* active status */
+.status-row {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  margin-bottom: 14px;
+}
+.active-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+}
+.active-dot.on {
+  background: #00dc64; box-shadow: 0 0 8px #00dc64;
+  animation: pulseDot 1.5s ease infinite;
+}
+.active-dot.off { background: #444; }
+@keyframes pulseDot {
+  0%,100% { box-shadow: 0 0 4px #00dc64; } 50% { box-shadow: 0 0 12px #00dc64; }
+}
+.status-label {
+  font-size: .65rem; letter-spacing: 1.5px; text-transform: uppercase;
+}
+.status-label.on { color: #00dc64; }
+.status-label.off { color: #555; }
+.renewed-models-label {
+  margin: -4px 0 10px;
+  text-align: center;
+  font-size: .62rem;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: #00dc64;
+}
+.btn-active-toggle {
+  font-family: 'Space Mono', monospace;
+  padding: 3px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,.1);
+  background: transparent; color: #666; cursor: pointer; font-size: .6rem;
+  letter-spacing: 1px; transition: all .2s;
+}
+.btn-active-toggle:hover { border-color: rgba(255,255,255,.2); color: #aaa; }
+.btn-active-toggle.on {
+  border-color: rgba(0,220,100,.3); color: #00dc64; background: rgba(0,220,100,.08);
+}
+
+/* card actions */
+.card-actions {
+  display: flex; gap: 10px; justify-content: center;
+}
+.btn-icon {
+  font-family: 'Space Mono', monospace;
+  width: 42px; height: 42px; border-radius: 10px; border: none;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; font-size: 1.1rem; transition: all .2s;
+}
+.btn-restart {
+  background: rgba(255,255,255,.07); color: #ccc;
+}
+.btn-restart:hover { background: rgba(255,255,255,.14); color: #fff; }
+.btn-delete {
+  background: rgba(255,60,60,.1); color: #ff5555;
+}
+.btn-delete:hover { background: rgba(255,60,60,.2); }
+
+/* reset available flash */
+.card.reset-available { animation: flashGreen 1.5s ease infinite; }
+@keyframes flashGreen {
+  0%, 100% { border-color: rgba(0,220,100,.3); box-shadow: 0 0 20px rgba(0,220,100,.06); }
+  50% { border-color: rgba(0,220,100,.6); box-shadow: 0 0 30px rgba(0,220,100,.15); }
+}
+.reset-text { color: #00dc64; font-weight: 700; letter-spacing: 2px; }
+
+/* urgent */
+.urgent-text { color: #ff4444; }
+
+/* =========== FAB =========== */
+.fab {
+  position: fixed; bottom: 28px; right: 28px; z-index: 10;
+  width: 60px; height: 60px; border-radius: 50%; border: none;
+  font-size: 2rem; color: #fff; cursor: pointer;
+  background: linear-gradient(135deg, #d4940a, #2e7cff);
+  box-shadow: 0 4px 24px rgba(0,0,0,.4);
+  transition: transform .25s, box-shadow .25s;
+  display: flex; align-items: center; justify-content: center;
+}
+.fab:hover {
+  transform: scale(1.1); box-shadow: 0 6px 32px rgba(0,0,0,.5);
+}
+
+/* =========== MODAL BACKDROP =========== */
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 20;
+  background: rgba(0,0,0,.6); backdrop-filter: blur(6px);
+  display: flex; align-items: center; justify-content: center;
+  animation: fadeIn .2s;
+}
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.modal-card {
+  background: #101318; border: 1px solid rgba(255,255,255,.1);
+  border-radius: 18px; padding: 32px; width: 92%; max-width: 420px;
+  animation: springIn .35s cubic-bezier(.34,1.56,.64,1);
+}
+@keyframes springIn {
+  from { transform: scale(.85) translateY(30px); opacity: 0; }
+  to   { transform: scale(1) translateY(0); opacity: 1; }
+}
+.modal-title {
+  font-size: 1.2rem; font-weight: 700; letter-spacing: 2px; margin-bottom: 24px; text-align: center;
+}
+
+/* form controls */
+.form-group { margin-bottom: 18px; }
+.form-label {
+  display: block; font-size: .7rem; color: #888;
+  letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 6px;
+}
+.form-input {
+  font-family: 'Space Mono', monospace;
+  width: 100%; padding: 10px 14px; border-radius: 10px;
+  border: 1px solid rgba(255,255,255,.1); background: rgba(255,255,255,.05);
+  color: #eee; font-size: .85rem; outline: none; transition: border-color .2s;
+}
+.form-input:focus { border-color: rgba(255,255,255,.3); }
+
+/* model toggle */
+.model-toggle {
+  display: flex; gap: 8px;
+}
+.model-opt {
+  font-family: 'Space Mono', monospace;
+  flex: 1; padding: 10px; border-radius: 10px; border: 1px solid rgba(255,255,255,.1);
+  background: transparent; color: #888; cursor: pointer; font-size: .8rem;
+  letter-spacing: 1px; transition: all .2s; text-align: center;
+}
+.model-opt:hover { border-color: rgba(255,255,255,.2); color: #ccc; }
+.model-opt.sel-claude {
+  border-color: #d4940a; color: #d4940a; background: rgba(212,148,10,.1);
+}
+.model-opt.sel-gemini {
+  border-color: #2e7cff; color: #2e7cff; background: rgba(46,124,255,.1);
+}
+.model-hint {
+  font-size: .6rem; color: #555; margin-top: 6px; letter-spacing: 1px; text-align: center;
+}
+
+/* time presets */
+.time-presets {
+  display: flex; gap: 6px; flex-wrap: wrap;
+}
+.preset-btn {
+  font-family: 'Space Mono', monospace;
+  padding: 8px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,.1);
+  background: transparent; color: #888; cursor: pointer; font-size: .78rem;
+  transition: all .2s;
+}
+.preset-btn:hover { border-color: rgba(255,255,255,.25); color: #ccc; }
+.preset-btn.active {
+  border-color: #fff; color: #fff; background: rgba(255,255,255,.08);
+}
+
+.custom-time-row {
+  display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap;
+}
+.custom-time-row .form-input { width: 70px; }
+.custom-time-row span { font-size: .7rem; color: #666; }
+
+/* submit */
+.btn-submit {
+  font-family: 'Space Mono', monospace;
+  width: 100%; padding: 12px; border: none; border-radius: 10px;
+  font-size: .9rem; font-weight: 700; letter-spacing: 2px; color: #fff;
+  cursor: pointer; margin-top: 8px; transition: opacity .2s;
+  background: linear-gradient(135deg, #d4940a, #2e7cff);
+}
+.btn-submit:hover { opacity: .85; }
+.btn-submit:disabled { opacity: .35; cursor: default; }
+
+/* empty state */
+.empty-state {
+  text-align: center; padding: 60px 20px; color: #444;
+  font-size: .85rem; letter-spacing: 1px;
+}
+.empty-state .big-icon { font-size: 3rem; margin-bottom: 14px; }
+
+/* responsive */
+@media (max-width: 480px) {
+  .app-header h1 { font-size: 1.5rem; }
+  .card-grid { grid-template-columns: 1fr; }
+  .modal-card { padding: 24px 18px; }
+  .fab { width: 52px; height: 52px; font-size: 1.6rem; bottom: 20px; right: 20px; }
+}
+</style>
+</head>
+<body>
+<canvas id="stars-canvas"></canvas>
+<div class="ambient-glow glow-amber"></div>
+<div class="ambient-glow glow-blue"></div>
+<div id="root"></div>
+
+<script>
+// =========== STAR PARTICLE BACKGROUND ===========
+(function initStars() {
+  const canvas = document.getElementById('stars-canvas');
+  const ctx = canvas.getContext('2d');
+  let stars = [];
+  function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+  function createStars() {
+    stars = [];
+    const count = Math.floor((canvas.width * canvas.height) / 6000);
+    for (let i = 0; i < count; i++) {
+      stars.push({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        r: Math.random() * 1.2 + 0.3,
+        a: Math.random() * 0.6 + 0.2,
+        da: (Math.random() - 0.5) * 0.008
+      });
+    }
+  }
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    stars.forEach(s => {
+      s.a += s.da;
+      if (s.a > 0.8 || s.a < 0.15) s.da *= -1;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255,255,255,' + s.a + ')';
+      ctx.fill();
+    });
+    requestAnimationFrame(draw);
+  }
+  resize(); createStars(); draw();
+  window.addEventListener('resize', () => { resize(); createStars(); });
+})();
+</script>
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+// =========== HELPERS ===========
+const STORAGE_KEY = 'limitlens_accounts';
+
+function loadAccounts() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+function saveAccounts(accounts) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(accounts));
+}
+
+function genId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+function formatTime(totalSec) {
+  if (totalSec <= 0) return '00:00:00';
+  const d = Math.floor(totalSec / 86400);
+  const h = Math.floor((totalSec % 86400) / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = Math.floor(totalSec % 60);
+  if (d > 0) return d + 'd ' + [h, m, s].map(v => String(v).padStart(2, '0')).join(':');
+  return [h, m, s].map(v => String(v).padStart(2, '0')).join(':');
+}
+
+function formatWindowLabel(hours) {
+  if (hours === 0) return 'NO LIMIT';
+  if (hours >= 24) {
+    const d = Math.floor(hours / 24);
+    const h = Math.floor(hours % 24);
+    const m = Math.round((hours % 1) * 60);
+    if (h > 0) return d + 'D ' + h + 'H';
+    return d + 'D';
+  }
+  if (hours < 1) {
+    return Math.round(hours * 60) + 'M';
+  }
+  const h = Math.floor(hours);
+  const m = Math.round((hours % 1) * 60);
+  return m > 0 ? h + 'H ' + m + 'M' : h + 'H';
+}
+
+// =========== CIRCULAR RING ===========
+function ProgressRing({ progress, color, isReset, isUrgent, countdown, windowLabel, small, noLimit }) {
+  const r = small ? 48 : 58, circ = 2 * Math.PI * r;
+  const vb = small ? '0 0 120 120' : '0 0 140 140';
+  const cx = small ? 60 : 70;
+  const offset = noLimit ? 0 : circ * (1 - Math.min(Math.max(progress, 0), 1));
+  const strokeColor = noLimit ? '#00dc64' : isReset ? '#00dc64' : isUrgent ? '#ff4444' : color;
+  const textColor = noLimit ? '#00dc64' : isReset ? '#00dc64' : isUrgent ? '#ff4444' : '#e0e0e0';
+
+  return (
+    <svg className={'ring-svg' + (small ? ' small' : '')} viewBox={vb}>
+      <circle className="ring-track" cx={cx} cy={cx} r={r} />
+      <circle className="ring-progress" cx={cx} cy={cx} r={r}
+        stroke={strokeColor}
+        strokeDasharray={circ}
+        strokeDashoffset={offset}
+        transform={'rotate(-90 ' + cx + ' ' + cx + ')'} />
+      <text x={cx} y={cx - 4} textAnchor="middle" dominantBaseline="central"
+        className={'ring-center-text' + (small ? ' small-text' : '')} fill={textColor}>
+        {noLimit ? '\u221e' : isReset ? '\u2713' : countdown}
+      </text>
+      <text x={cx} y={cx + 18} textAnchor="middle" className="ring-center-sub">
+        {noLimit ? 'NO LIMIT' : isReset ? 'READY' : windowLabel}
+      </text>
+    </svg>
+  );
+}
+
+// =========== HELPERS FOR MODELS ===========
+function getModels(account) {
+  if (Array.isArray(account.models)) return account.models;
+  if (account.model) return [account.model];
+  return ['claude'];
+}
+
+function getTimers(account) {
+  // New format: account.timers = { claude: { windowHours, startTime }, ... }
+  if (account.timers) return account.timers;
+  // Legacy: single model with top-level windowHours/startTime
+  const models = getModels(account);
+  const timers = {};
+  models.forEach(m => {
+    timers[m] = { windowHours: account.windowHours || (m === 'claude' ? 5 : 24), startTime: account.startTime || Date.now() };
+  });
+  return timers;
+}
+
+function computeTimer(timer, now) {
+  if (timer.windowHours === 0) {
+    return { remaining: Infinity, remainingSec: Infinity, progress: 0, isReset: false, isUrgent: false, windowHours: 0, noLimit: true };
+  }
+  const windowMs = timer.windowHours * 3600 * 1000;
+  const elapsed = now - timer.startTime;
+  const remaining = Math.max(0, windowMs - elapsed);
+  const remainingSec = remaining / 1000;
+  const progress = windowMs > 0 ? elapsed / windowMs : 1;
+  const isReset = remaining <= 0;
+  const isUrgent = !isReset && remaining <= 600000;
+  return { remaining, remainingSec, progress, isReset, isUrgent, windowHours: timer.windowHours, noLimit: false };
+}
+
+// =========== ACCOUNT CARD ===========
+function AccountCard({ account, onRestartModel, onDelete, onToggleActive, showRenewedInfo }) {
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(id);
+  }, []);
+
+  const models = getModels(account);
+  const hasClaude = models.includes('claude');
+  const hasGemini = models.includes('gemini');
+  const hasBoth = hasClaude && hasGemini;
+  const timers = getTimers(account);
+  const isActive = !!account.active;
+  const cardClass = hasBoth ? 'both-card' : hasClaude ? 'claude-card' : 'gemini-card';
+
+  // Compute per-model timer state
+  const timerStates = {};
+  models.forEach(m => { timerStates[m] = computeTimer(timers[m], now); });
+  const anyReset = models.some(m => timerStates[m].isReset);
+  const renewedModels = models.filter(m => timerStates[m].isReset);
+  const renewedText = renewedModels
+    .map(m => m.charAt(0).toUpperCase() + m.slice(1))
+    .join(', ');
+
+  const MODEL_COLOR = { claude: '#d4940a', gemini: '#2e7cff' };
+
+  function renderSingleTimer(m) {
+    const t = timerStates[m];
+    const color = MODEL_COLOR[m];
+    const barColor = t.noLimit ? '#00dc64' : t.isReset ? '#00dc64' : t.isUrgent ? '#ff4444' : color;
+    const windowLabel = formatWindowLabel(t.windowHours) + (t.noLimit ? '' : ' WINDOW');
+    return (
+      <React.Fragment key={m}>
+        <div className="card-ring-area">
+          <ProgressRing
+            progress={Math.min(t.progress, 1)}
+            color={color}
+            isReset={t.isReset}
+            isUrgent={t.isUrgent}
+            noLimit={t.noLimit}
+            countdown={formatTime(t.remainingSec)}
+            windowLabel={windowLabel}
+          />
+          {t.noLimit && <div className="reset-text" style={{ marginTop: 8, fontSize: '.8rem' }}>{"\u221e"} NO LIMIT</div>}
+          {!t.noLimit && t.isReset && <div className="reset-text" style={{ marginTop: 8, fontSize: '.8rem' }}>{"\u2713"} RESET AVAILABLE</div>}
+          {!t.noLimit && t.isUrgent && !t.isReset && <div className="urgent-text" style={{ marginTop: 8, fontSize: '.72rem', letterSpacing: 1 }}>{"\u26a0"} ALMOST THERE</div>}
+        </div>
+        {!t.noLimit && (
+          <div className="h-bar-track">
+            <div className="h-bar-fill" style={{ width: Math.min(t.progress * 100, 100) + '%', background: barColor }} />
+          </div>
+        )}
+      </React.Fragment>
+    );
+  }
+
+  function renderDualTimers() {
+    return (
+      <React.Fragment>
+        <div className="dual-ring-area">
+          {models.map(m => {
+            const t = timerStates[m];
+            const color = MODEL_COLOR[m];
+            const windowLabel = t.noLimit ? '' : formatWindowLabel(t.windowHours) + 'W';
+            return (
+              <div className="dual-ring-col" key={m}>
+                <div className={'model-ring-label ' + m + '-label'}>{m}</div>
+                <ProgressRing
+                  progress={Math.min(t.progress, 1)}
+                  color={color}
+                  isReset={t.isReset}
+                  isUrgent={t.isUrgent}
+                  noLimit={t.noLimit}
+                  countdown={formatTime(t.remainingSec)}
+                  windowLabel={windowLabel}
+                  small={true}
+                />
+                {t.noLimit && <div className="reset-text" style={{ marginTop: 4, fontSize: '.65rem' }}>{"\u221e"} NO LIMIT</div>}
+                {!t.noLimit && t.isReset && <div className="reset-text" style={{ marginTop: 4, fontSize: '.7rem' }}>{"\u2713"} READY</div>}
+                {!t.noLimit && t.isUrgent && !t.isReset && <div className="urgent-text" style={{ marginTop: 4, fontSize: '.65rem' }}>{"\u26a0"} SOON</div>}
+              </div>
+            );
+          })}
+        </div>
+        {models.map(m => {
+          const t = timerStates[m];
+          if (t.noLimit) return null;
+          const barColor = t.isReset ? '#00dc64' : t.isUrgent ? '#ff4444' : MODEL_COLOR[m];
+          return (
+            <div className="dual-bar-row" key={m}>
+              <span className={'dual-bar-label ' + m + '-label'}>{m}</span>
+              <div className="h-bar-track">
+                <div className="h-bar-fill" style={{ width: Math.min(t.progress * 100, 100) + '%', background: barColor }} />
+              </div>
+            </div>
+          );
+        })}
+      </React.Fragment>
+    );
+  }
+
+  return (
+    <div className={'card ' + cardClass + (anyReset ? ' reset-available' : '')}>
+      <div className="card-top">
+        <span className="card-name">{account.name}</span>
+        <div className="card-badges">
+          {hasClaude && <span className="card-model-badge badge-claude">Claude</span>}
+          {hasGemini && <span className="card-model-badge badge-gemini">Gemini</span>}
+        </div>
+      </div>
+
+      <div className="status-row">
+        <span className={'active-dot ' + (isActive ? 'on' : 'off')} />
+        <span className={'status-label ' + (isActive ? 'on' : 'off')}>
+          {isActive ? 'Currently Active' : 'Inactive'}
+        </span>
+        <button className={'btn-active-toggle ' + (isActive ? 'on' : '')}
+          onClick={() => onToggleActive(account.id)}>
+          {isActive ? 'ACTIVE' : 'HIT LIMIT'}
+        </button>
+      </div>
+
+      {showRenewedInfo && renewedModels.length > 0 && (
+        <div className="renewed-models-label">Renewed: {renewedText}</div>
+      )}
+
+      {hasBoth ? renderDualTimers() : renderSingleTimer(models[0])}
+
+      <div className={hasBoth ? 'dual-actions' : 'card-actions'} style={{ marginTop: hasBoth ? 12 : 0 }}>
+        {hasBoth ? (
+          <React.Fragment>
+            {models.map(m => (
+              <button key={m} className={'btn-restart-model ' + m + '-btn'}
+                title={'Restart ' + m + ' timer'}
+                onClick={() => onRestartModel(account.id, m)}>
+                {"\u21ba"} {m}
+              </button>
+            ))}
+          </React.Fragment>
+        ) : (
+          <button className="btn-icon btn-restart" title="Restart timer"
+            onClick={() => onRestartModel(account.id, models[0])}>{"\u21ba"}</button>
+        )}
+        <button className="btn-icon btn-delete" title="Delete account" onClick={() => onDelete(account.id)}>{"\u2715"}</button>
+      </div>
+    </div>
+  );
+}
+
+// =========== ADD MODAL ===========
+function AddModal({ onClose, onAdd }) {
+  const [name, setName] = useState('');
+  const [models, setModels] = useState(['claude']);
+  const [customDays, setCustomDays] = useState('');
+  const [customHrs, setCustomHrs] = useState('');
+  const [customMins, setCustomMins] = useState('');
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    const handler = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [onClose]);
+
+  function toggleModel(m) {
+    setModels(prev => {
+      if (prev.includes(m)) {
+        const next = prev.filter(x => x !== m);
+        return next.length > 0 ? next : prev; // keep at least one
+      }
+      return [...prev, m];
+    });
+  }
+
+  const [claudeCustomD, setClaudeCustomD] = useState('');
+  const [claudeCustomH, setClaudeCustomH] = useState('');
+  const [claudeCustomM, setClaudeCustomM] = useState('');
+  const [geminiCustomD, setGeminiCustomD] = useState('');
+  const [geminiCustomH, setGeminiCustomH] = useState('');
+  const [geminiCustomM, setGeminiCustomM] = useState('');
+
+  const hasBoth = models.includes('claude') && models.includes('gemini');
+
+  function resolveHours(cd, ch, cm) {
+    const d = parseFloat(cd) || 0;
+    const h = parseFloat(ch) || 0;
+    const m = parseFloat(cm) || 0;
+    return d * 24 + h + m / 60;
+  }
+
+  function getHours() {
+    return resolveHours(customDays, customHrs, customMins);
+  }
+
+  function isValid() {
+    if (name.trim().length === 0) return false;
+    if (hasBoth) {
+      const ch = resolveHours(claudeCustomD, claudeCustomH, claudeCustomM);
+      const gh = resolveHours(geminiCustomD, geminiCustomH, geminiCustomM);
+      return ch > 0 && isFinite(ch) && gh > 0 && isFinite(gh);
+    }
+    const h = getHours();
+    return h > 0 && isFinite(h);
+  }
+
+  function handleSubmit(e) {
+    e.preventDefault();
+    if (!isValid()) return;
+    if (hasBoth) {
+      const ch = resolveHours(claudeCustomD, claudeCustomH, claudeCustomM);
+      const gh = resolveHours(geminiCustomD, geminiCustomH, geminiCustomM);
+      onAdd({ name: name.trim(), models: [...models], timers: {
+        claude: { windowHours: ch, startTime: Date.now() },
+        gemini: { windowHours: gh, startTime: Date.now() }
+      }});
+    } else {
+      const m = models[0];
+      onAdd({ name: name.trim(), models: [...models], timers: {
+        [m]: { windowHours: getHours(), startTime: Date.now() }
+      }});
+    }
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-title">+ NEW ACCOUNT</div>
+        <form onSubmit={handleSubmit}>
+          <div className="form-group">
+            <label className="form-label">Account Name</label>
+            <input ref={inputRef} className="form-input" placeholder='e.g. "Personal"'
+              value={name} onChange={(e) => setName(e.target.value)} maxLength={40} />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Model (select one or both)</label>
+            <div className="model-toggle">
+              <button type="button" className={'model-opt' + (models.includes('claude') ? ' sel-claude' : '')}
+                onClick={() => toggleModel('claude')}>Claude</button>
+              <button type="button" className={'model-opt' + (models.includes('gemini') ? ' sel-gemini' : '')}
+                onClick={() => toggleModel('gemini')}>Gemini</button>
+            </div>
+            {models.length === 2 && <div className="model-hint">Both models selected</div>}
+          </div>
+
+          {!hasBoth && (
+          <div className="form-group">
+            <label className="form-label">Reset Window</label>
+            <div className="custom-time-row">
+              <input className="form-input" type="number" min="0" step="1"
+                placeholder="0" value={customDays}
+                onChange={(e) => setCustomDays(e.target.value)} />
+              <span>days</span>
+              <input className="form-input" type="number" min="0" step="1"
+                placeholder="0" value={customHrs}
+                onChange={(e) => setCustomHrs(e.target.value)} />
+              <span>hrs</span>
+              <input className="form-input" type="number" min="0" step="1"
+                placeholder="0" value={customMins}
+                onChange={(e) => setCustomMins(e.target.value)} />
+              <span>min</span>
+            </div>
+          </div>
+          )}
+
+          {hasBoth && (
+          <React.Fragment>
+            <div className="form-group">
+              <label className="form-label" style={{color:'#d4940a'}}>Claude Reset Window</label>
+              <div className="custom-time-row">
+                <input className="form-input" type="number" min="0" step="1" placeholder="0" value={claudeCustomD} onChange={(e) => setClaudeCustomD(e.target.value)} />
+                <span>days</span>
+                <input className="form-input" type="number" min="0" step="1" placeholder="0" value={claudeCustomH} onChange={(e) => setClaudeCustomH(e.target.value)} />
+                <span>hrs</span>
+                <input className="form-input" type="number" min="0" step="1" placeholder="0" value={claudeCustomM} onChange={(e) => setClaudeCustomM(e.target.value)} />
+                <span>min</span>
+              </div>
+            </div>
+            <div className="form-group">
+              <label className="form-label" style={{color:'#2e7cff'}}>Gemini Reset Window</label>
+              <div className="custom-time-row">
+                <input className="form-input" type="number" min="0" step="1" placeholder="0" value={geminiCustomD} onChange={(e) => setGeminiCustomD(e.target.value)} />
+                <span>days</span>
+                <input className="form-input" type="number" min="0" step="1" placeholder="0" value={geminiCustomH} onChange={(e) => setGeminiCustomH(e.target.value)} />
+                <span>hrs</span>
+                <input className="form-input" type="number" min="0" step="1" placeholder="0" value={geminiCustomM} onChange={(e) => setGeminiCustomM(e.target.value)} />
+                <span>min</span>
+              </div>
+            </div>
+          </React.Fragment>
+          )}
+
+          <button type="submit" className="btn-submit" disabled={!isValid()}>
+            ADD ACCOUNT
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// =========== APP ===========
+function App() {
+  const [accounts, setAccounts] = useState(loadAccounts);
+  const [filter, setFilter] = useState('all');
+  const [showModal, setShowModal] = useState(false);
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => { saveAccounts(accounts); }, [accounts]);
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const handleAdd = useCallback((data) => {
+    setAccounts(prev => [...prev, {
+      id: genId(),
+      name: data.name,
+      models: data.models,
+      timers: data.timers,
+      active: false
+    }]);
+    setShowModal(false);
+  }, []);
+
+  const handleRestartModel = useCallback((id, model) => {
+    setAccounts(prev => prev.map(a => {
+      if (a.id !== id) return a;
+      const timers = getTimers(a);
+      return { ...a, timers: { ...timers, [model]: { ...timers[model], startTime: Date.now() } } };
+    }));
+  }, []);
+
+  const handleDelete = useCallback((id) => {
+    setAccounts(prev => prev.filter(a => a.id !== id));
+  }, []);
+
+  const handleToggleActive = useCallback((id) => {
+    setAccounts(prev => prev.map(a => {
+      if (a.id !== id) return a;
+      const nowActive = !a.active;
+      if (nowActive) {
+        // When marking active: restart all timers (limit just hit)
+        const timers = getTimers(a);
+        const resetTimers = {};
+        Object.keys(timers).forEach(m => {
+          resetTimers[m] = { ...timers[m], startTime: Date.now() };
+        });
+        return { ...a, active: true, timers: resetTimers };
+      }
+      return { ...a, active: false };
+    }));
+  }, []);
+
+  function isLimitRenewed(account) {
+    const models = getModels(account);
+    const timers = getTimers(account);
+    return models.some(m => {
+      const t = computeTimer(timers[m], now);
+      return t.isReset;
+    });
+  }
+
+  const filtered = filter === 'all' ? accounts
+    : accounts.filter(a => isLimitRenewed(a));
+
+  return (
+    <div className="app-wrapper">
+      <header className="app-header">
+        <h1>LIMITLENS</h1>
+        <p>AI Token Reset Tracker</p>
+      </header>
+
+      <div className="filter-bar">
+        <button className={'filter-btn' + (filter === 'all' ? ' active-all' : '')}
+          onClick={() => setFilter('all')}>All Accounts</button>
+        <button className={'filter-btn' + (filter === 'renewed' ? ' active-renewed' : '')}
+          onClick={() => setFilter('renewed')}>Limit Renewed</button>
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="empty-state">
+          <div className="big-icon">🛰</div>
+          <div>No accounts yet.<br />Tap + to add one.</div>
+        </div>
+      ) : (
+        <div className="card-grid">
+          {filtered.map(a => (
+            <AccountCard key={a.id} account={a}
+              onRestartModel={handleRestartModel} onDelete={handleDelete}
+              onToggleActive={handleToggleActive}
+              showRenewedInfo={filter === 'renewed'} />
+          ))}
+        </div>
+      )}
+
+      <button className="fab" onClick={() => setShowModal(true)} title="Add account">+</button>
+
+      {showModal && <AddModal onClose={() => setShowModal(false)} onAdd={handleAdd} />}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
