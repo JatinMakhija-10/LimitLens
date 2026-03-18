@@ -439,19 +439,15 @@ function formatTime(totalSec) {
 
 function formatWindowLabel(hours) {
   if (hours === 0) return 'NO LIMIT';
-  if (hours >= 24) {
-    const d = Math.floor(hours / 24);
-    const h = Math.floor(hours % 24);
-    const m = Math.round((hours % 1) * 60);
-    if (h > 0) return d + 'D ' + h + 'H';
-    return d + 'D';
-  }
-  if (hours < 1) {
-    return Math.round(hours * 60) + 'M';
-  }
-  const h = Math.floor(hours);
-  const m = Math.round((hours % 1) * 60);
-  return m > 0 ? h + 'H ' + m + 'M' : h + 'H';
+  const totalMinutes = Math.max(0, Math.round(hours * 60));
+  const d = Math.floor(totalMinutes / 1440);
+  const h = Math.floor((totalMinutes % 1440) / 60);
+  const m = totalMinutes % 60;
+  const parts = [];
+  if (d > 0) parts.push(d + 'D');
+  if (h > 0) parts.push(h + 'H');
+  if (m > 0) parts.push(m + 'M');
+  return parts.length > 0 ? parts.join(' ') : '0M';
 }
 
 // =========== CIRCULAR RING ===========
@@ -505,11 +501,11 @@ function computeTimer(timer, now) {
   if (timer.windowHours === 0) {
     return { remaining: Infinity, remainingSec: Infinity, progress: 0, isReset: false, isUrgent: false, windowHours: 0, noLimit: true };
   }
-  const windowMs = timer.windowHours * 3600 * 1000;
-  const elapsed = now - timer.startTime;
+  const windowMs = Math.max(0, Math.round(timer.windowHours * 3600 * 1000));
+  const elapsed = Math.max(0, now - timer.startTime);
   const remaining = Math.max(0, windowMs - elapsed);
-  const remainingSec = remaining / 1000;
-  const progress = windowMs > 0 ? elapsed / windowMs : 1;
+  const remainingSec = Math.ceil(remaining / 1000);
+  const progress = windowMs > 0 ? Math.min(Math.max(elapsed / windowMs, 0), 1) : 1;
   const isReset = remaining <= 0;
   const isUrgent = !isReset && remaining <= 600000;
   return { remaining, remainingSec, progress, isReset, isUrgent, windowHours: timer.windowHours, noLimit: false };
